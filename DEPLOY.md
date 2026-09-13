@@ -1,5 +1,6 @@
 # IntroQ デプロイ手順
 
+> 公開先: **https://song-name-quis.vercel.app/** （2026-09-13 公開・再生まで動作確認済み）
 > 対象: Vercel への公開 / 最終更新 2026-09-13
 > 関連: [PLAN.md](PLAN.md)（設計判断）, [TASKS.md](TASKS.md)（実装指示）
 
@@ -113,8 +114,11 @@ Vercel 側の環境変数設定は不要ですが、値を変えるたびに手�
 
 **最優先: Apple Music の認証が新しいドメインで通るか。**
 
-MusicKit は配信ドメインの登録を要求する可能性があります。localhost では通っていますが、
-新しいドメインで弾かれる場合、Apple Developer の
+> **【2026-09-13 実測】`song-name-quis.vercel.app` では、Apple 側への追加登録なしで
+> 認証・ライブラリ取込・再生まで通った。** 長く未確認だった T0-1 はこれで決着。
+> ただし独自ドメインに変える場合は、再度ここから確認すること。
+
+弾かれる場合は、Apple Developer の
 Certificates, Identifiers & Profiles → **Media IDs** の MusicKit Identifier に
 デプロイ先ドメインを登録する必要があります。
 
