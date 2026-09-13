@@ -12,7 +12,7 @@ import {
 import * as Crypto from 'expo-crypto';
 
 import { generateRoomCode, normalizeRoomCode } from '../lib/roomCode';
-import { supabase } from '../lib/supabase';
+import { ensureAnonymousSession, supabase } from '../lib/supabase';
 import type { RootStackParamList } from '../navigation/types';
 import { useRoomStore } from '../store/roomStore';
 import { useUserStore } from '../store/userStore';
@@ -54,13 +54,16 @@ export function HomeScreen({ navigation }: Props) {
       resetUser();
       resetRoom();
 
+      // RLS が所有権を auth.uid() で判定するため、先にセッションを確保する（判断 9）
+      const userId = await ensureAnonymousSession();
+
       // コードの衝突は稀だが、念のため数回だけ再試行する
       let room: { id: string; code: string | null; status: 'lobby' | 'playing' | 'finished'; host_id: string } | null = null;
       let lastError: unknown = null;
       for (let attempt = 0; attempt < 3 && !room; attempt++) {
         const { data, error } = await supabase
           .from('rooms')
-          .insert({ host_id: hostId, code: generateRoomCode() })
+          .insert({ host_id: hostId, code: generateRoomCode(), host_user_id: userId })
           .select('id, code, status, host_id')
           .single();
 
@@ -81,6 +84,7 @@ export function HomeScreen({ navigation }: Props) {
         .insert({
           room_id: room.id,
           user_name: trimmedName,
+          user_id: userId,
         })
         .select('id')
         .single();
@@ -139,6 +143,8 @@ export function HomeScreen({ navigation }: Props) {
       resetUser();
       resetRoom();
 
+      const userId = await ensureAnonymousSession();
+
       const { data: room, error: roomError } = await supabase
         .from('rooms')
         .select('id, code, status, host_id')
@@ -160,6 +166,7 @@ export function HomeScreen({ navigation }: Props) {
         .insert({
           room_id: room.id,
           user_name: trimmedName,
+          user_id: userId,
         })
         .select('id')
         .single();
@@ -267,6 +274,12 @@ export function HomeScreen({ navigation }: Props) {
           >
             <Text style={styles.secondaryButtonText}>ルームに参加する</Text>
           </Pressable>
+          <Pressable
+            style={styles.devLink}
+            onPress={() => navigation.navigate('PreviewLab')}
+          >
+            <Text style={styles.devLinkText}>開発用: プレビュー音源ラボ</Text>
+          </Pressable>
         </>
       )}
     </View>
@@ -338,5 +351,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 17,
     fontWeight: '600',
+  },
+  devLink: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  devLinkText: {
+    color: '#555',
+    fontSize: 13,
   },
 });

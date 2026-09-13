@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 
 import { useGameNavigation } from '../hooks/useGameNavigation';
-import { useMusicKit } from '../hooks/useMusicKit';
+import { getMusicKitInstance } from '../hooks/useMusicKit';
+import { fetchCatalogSongsByIds } from '../lib/appleCatalog';
 import { useRoomRealtime } from '../hooks/useRoomRealtime';
 import { supabase } from '../lib/supabase';
 import type { RootStackParamList } from '../navigation/types';
@@ -21,7 +22,6 @@ import {
   participantReady,
   useRoomStore,
 } from '../store/roomStore';
-import { useUserStore } from '../store/userStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'HostLobby'>;
 
@@ -29,8 +29,6 @@ export function HostLobbyScreen(_props: Props) {
   const roomId = useRoomStore((s) => s.roomId);
   const code = useRoomStore((s) => s.code);
   const participants = useRoomStore((s) => s.participants);
-  const { createPlaylist } = useMusicKit({ includeWriteScope: true });
-  const userName = useUserStore((s) => s.userName);
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -74,8 +72,8 @@ export function HostLobbyScreen(_props: Props) {
 
     setStarting(true);
     try {
-      const quizTracks = buildQuizTracks(participants);
-      if (quizTracks.length === 0) {
+      const candidates = buildQuizTracks(participants);
+      if (candidates.length === 0) {
         throw new Error(
           contributorCount === 0
             ? '全員が「曲を追加せずに参加」を選んでいるため、出題できる曲がありません。誰か 1 人はライブラリを提供してください。'
@@ -83,11 +81,24 @@ export function HostLobbyScreen(_props: Props) {
         );
       }
 
-      // プレイリスト作成は「あると嬉しい」機能。失敗してもゲームは開始する。
-      try {
-        await createPlaylist(`IntroQ ${userName}`, quizTracks);
-      } catch (e) {
-        console.warn('[playlist] 作成に失敗しましたが、ゲームは続行します', e);
+      // 出題音源はプレビュー（判断 8）。ここで URL を一括取得して出題リストに埋める。
+      // 1 リクエストで 20 曲ぶん揃うので、ゲーム中はカタログ API を叩かなくて済む。
+      const storefront = (await getMusicKitInstance()).storefrontId || 'jp';
+      const catalog = await fetchCatalogSongsByIds(
+        candidates.map((t) => t.catalogId),
+        storefront,
+      );
+      const quizTracks = candidates
+        .map((t) => ({
+          ...t,
+          previewUrl: catalog.get(t.catalogId)?.previewUrl ?? null,
+        }))
+        .filter((t) => t.previewUrl !== null);
+
+      if (quizTracks.length === 0) {
+        throw new Error(
+          '出題できる曲がありません。プレビュー音源が取得できる曲が 1 曲もありませんでした。',
+        );
       }
 
       const { error } = await supabase
@@ -101,6 +112,17 @@ export function HostLobbyScreen(_props: Props) {
         .eq('id', roomId);
 
       if (error) throw error;
+
+      // 出題リストを作った時点で、個人のライブラリはもう不要。
+      // 音楽の趣味は個人を推測させ得る情報なので、保持し続けない。
+      // 失敗してもゲームは続行する（次回の開始時にも消える機会がある）。
+      const { error: clearError } = await supabase.rpc('clear_room_libraries', {
+        target_room: roomId,
+      });
+      if (clearError) {
+        console.warn('[cleanup] ライブラリの削除に失敗しました', clearError);
+      }
+
       // 画面遷移は useGameNavigation が status の変化を受けて行う
     } catch (e) {
       Alert.alert(
@@ -168,9 +190,7 @@ export function HostLobbyScreen(_props: Props) {
         {starting ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.primaryButtonText}>
-            プレイリスト作成＆ゲーム開始
-          </Text>
+          <Text style={styles.primaryButtonText}>ゲーム開始</Text>
         )}
       </Pressable>
     </View>

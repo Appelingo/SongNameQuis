@@ -9,9 +9,11 @@ import { useUserStore } from '../store/userStore';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * rooms.status に応じて全員を同じ画面へ移す。
- * ロビー / クイズ / 結果のすべての画面で呼ぶ。
- * ホストも自分で navigate せず、自分が書いた UPDATE を Realtime で受け取って遷移する。
+ * rooms.status に応じて画面を移す。ロビー / クイズ / 結果のすべての画面で呼ぶ。
+ *
+ * ゲストはクイズ中に操作しない（判断 6）ため、'playing' では遷移させず
+ * ロビーに留める。ロビー側が status を見て表示だけ切り替える。
+ * 'finished' のときだけ、ホストもゲストも結果画面へ移る。
  */
 export function useGameNavigation() {
   const navigation = useNavigation<Nav>();
@@ -20,14 +22,12 @@ export function useGameNavigation() {
   const isHost = useUserStore((s) => s.isHost);
 
   useEffect(() => {
-    const target: keyof RootStackParamList | null =
-      status === 'playing'
-        ? isHost
-          ? 'HostQuiz'
-          : 'GuestQuiz'
-        : status === 'finished'
-          ? 'Result'
-          : null;
+    let target: keyof RootStackParamList | null = null;
+    if (status === 'finished') {
+      target = 'Result';
+    } else if (status === 'playing' && isHost) {
+      target = 'HostQuiz';
+    }
 
     // 既にその画面にいるなら何もしない（replace ループを防ぐ）
     if (!target || route.name === target) return;

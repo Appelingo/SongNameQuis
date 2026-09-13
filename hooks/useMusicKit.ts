@@ -11,7 +11,7 @@ const MUSICKIT_SCRIPT_URL =
   'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
 const MUSICKIT_LOADED_EVENT = 'musickitloaded';
 
-type MusicKitScope = 'music-library-read' | 'music-library-write';
+type MusicKitScope = 'music-library-read';
 
 let musicKitReadyPromise: Promise<void> | null = null;
 let configuredInstance: MusicKitInstance | null = null;
@@ -288,24 +288,7 @@ async function fetchAllLibrarySongs(
   return tracks;
 }
 
-async function searchCatalogSongId(
-  music: MusicKitInstance,
-  track: LibraryTrack,
-): Promise<string | null> {
-  // クエリはオブジェクトで渡す。自分で encodeURIComponent しない。
-  // ストアフロントは {{storefrontId}} で自動置換される（jp をハードコードしない）
-  const response = await music.api.music<{
-    results?: { songs?: { data?: MusicKitApiItem[] } };
-  }>('/v1/catalog/{{storefrontId}}/search', {
-    term: `${track.title} ${track.artist}`,
-    types: 'songs',
-    limit: 1,
-  });
-
-  return response.data?.results?.songs?.data?.[0]?.id ?? null;
-}
-
-export function useMusicKit(options?: { includeWriteScope?: boolean }) {
+export function useMusicKit() {
   const [isReady, setIsReady] = useState(false);
   const [isPrepared, setIsPrepared] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -360,10 +343,7 @@ export function useMusicKit(options?: { includeWriteScope?: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const scopes: MusicKitScope[] = options?.includeWriteScope
-        ? ['music-library-read', 'music-library-write']
-        : ['music-library-read'];
-      const instance = await getMusicKitInstance(scopes);
+      const instance = await getMusicKitInstance();
       setIsAuthorized(instance.isAuthorized);
       setIsPrepared(true);
       setIsReady(true);
@@ -373,7 +353,7 @@ export function useMusicKit(options?: { includeWriteScope?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [isWeb, options?.includeWriteScope]);
+  }, [isWeb]);
 
   const fetchLibrary = useCallback(async () => {
     if (!isWeb) return;
@@ -399,11 +379,7 @@ export function useMusicKit(options?: { includeWriteScope?: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const instance = await getMusicKitInstance(
-        options?.includeWriteScope
-          ? ['music-library-read', 'music-library-write']
-          : ['music-library-read'],
-      );
+      const instance = await getMusicKitInstance();
       setIsAuthorized(instance.isAuthorized);
       const tracks = await fetchAllLibrarySongs(instance);
       setLibrary(tracks);
@@ -415,47 +391,7 @@ export function useMusicKit(options?: { includeWriteScope?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [isWeb, options?.includeWriteScope]);
-
-  const createPlaylist = useCallback(
-    async (name: string, tracks: PlaylistTrack[]): Promise<string | null> => {
-      if (!isWeb) {
-        throw new Error('Web ブラウザで実行してください。');
-      }
-
-      const instance = await getMusicKitInstance([
-        'music-library-read',
-        'music-library-write',
-      ]);
-
-      // 出題リストは既に catalogId を持っているので、ここでの検索は不要。
-      // 1 リクエストで「作成 + 曲追加」までやる。
-      const response = await instance.api.music<{ data?: MusicKitApiItem[] }>(
-        '/v1/me/library/playlists',
-        {},
-        {
-          fetchOptions: {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              attributes: {
-                name,
-                description: 'IntroQ クイズ用プレイリスト',
-              },
-              relationships: {
-                tracks: {
-                  data: tracks.map((t) => ({ id: t.catalogId, type: 'songs' })),
-                },
-              },
-            }),
-          },
-        },
-      );
-
-      return unwrapMusicData(response)[0]?.id ?? null;
-    },
-    [isWeb],
-  );
+  }, [isWeb]);
 
   return {
     isWeb,
@@ -470,6 +406,5 @@ export function useMusicKit(options?: { includeWriteScope?: boolean }) {
     authorize,
     fetchLibrary,
     connectAndFetch,
-    createPlaylist,
   };
 }

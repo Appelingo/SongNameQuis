@@ -2,27 +2,24 @@ import { useEffect } from 'react';
 
 import { supabase } from '../lib/supabase';
 import { useRoomStore, type Participant } from '../store/roomStore';
-import type { Answer, PlaylistTrack, RoomStatus, TrackPhase } from '../types/database';
+import type { PlaylistTrack, RoomStatus, TrackPhase } from '../types/database';
 
 /**
- * ロビー／ゲーム中共通: rooms・participants・answers の変更を購読する。
+ * ロビー／ゲーム中共通: rooms と participants の変更を購読する。
  * 進行状態は rooms 行を唯一の真実にしているため、再接続のたびに
- * fetchRoom / fetchParticipants / fetchAnswers を呼び直して取りこぼしを埋める。
+ * fetchRoom / fetchParticipants を呼び直して取りこぼしを埋める。
  */
 export function useRoomRealtime(roomId: string | null) {
   const setParticipants = useRoomStore((s) => s.setParticipants);
   const upsertParticipant = useRoomStore((s) => s.upsertParticipant);
   const fetchParticipants = useRoomStore((s) => s.fetchParticipants);
   const fetchRoom = useRoomStore((s) => s.fetchRoom);
-  const fetchAnswers = useRoomStore((s) => s.fetchAnswers);
-  const upsertAnswer = useRoomStore((s) => s.upsertAnswer);
 
   useEffect(() => {
     if (!roomId) return;
 
     void fetchRoom();
     void fetchParticipants();
-    void fetchAnswers();
 
     const channel = supabase
       .channel(`room:${roomId}`)
@@ -77,39 +74,16 @@ export function useRoomRealtime(roomId: string | null) {
           });
         },
       )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'answers',
-          filter: `room_id=eq.${roomId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'DELETE') return; // 解答は削除しない運用
-          const row = payload.new as Answer;
-          if (row?.id) upsertAnswer(row);
-        },
-      )
       .subscribe((status, err) => {
         console.log('[realtime] channel status:', status, err ?? '');
         if (status === 'SUBSCRIBED') {
           void fetchRoom();
           void fetchParticipants();
-          void fetchAnswers();
         }
       });
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [
-    roomId,
-    fetchRoom,
-    fetchParticipants,
-    fetchAnswers,
-    setParticipants,
-    upsertParticipant,
-    upsertAnswer,
-  ]);
+  }, [roomId, fetchRoom, fetchParticipants, setParticipants, upsertParticipant]);
 }

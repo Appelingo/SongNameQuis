@@ -4,6 +4,7 @@ export type RootStackParamList = {
   HostLobby: undefined;
   GuestLobby: undefined;
   HostQuiz: undefined;
-  GuestQuiz: undefined;
   Result: undefined;
+  /** 開発用: プレビュー音源の検証画面 */
+  PreviewLab: undefined;
 };

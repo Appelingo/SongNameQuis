@@ -27,6 +27,8 @@ interface MusicKitResponse<T = unknown> {
 
 interface MusicKitInstance {
   isAuthorized: boolean;
+  /** ユーザーのストアフロント（'jp' など）。カタログ照会の地域指定に使う */
+  readonly storefrontId: string;
   authorize(): Promise<string>;
   unauthorize(): Promise<void>;
   api: {
@@ -42,6 +44,7 @@ interface MusicKitInstance {
   pause(): void;
   stop(): void;
   seekToTime(time: number): Promise<void>;
+  volume: number;
   readonly currentPlaybackTime: number;
   readonly nowPlayingItem: { id: string } | null;
   readonly playbackState: number;

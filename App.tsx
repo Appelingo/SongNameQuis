@@ -7,12 +7,13 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { HeaderHomeButton } from './components/HeaderHomeButton';
 import type { RootStackParamList } from './navigation/types';
 import { GuestLobbyScreen } from './screens/GuestLobbyScreen';
-import { GuestQuizScreen } from './screens/GuestQuizScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { HostLobbyScreen } from './screens/HostLobbyScreen';
 import { HostQuizScreen } from './screens/HostQuizScreen';
 import { LibraryImportScreen } from './screens/LibraryImportScreen';
+import { PreviewLabScreen } from './screens/PreviewLabScreen';
 import { ResultScreen } from './screens/ResultScreen';
+import { ensureAnonymousSession } from './lib/supabase';
 import { useRoomStore } from './store/roomStore';
 import { useUserStore } from './store/userStore';
 
@@ -43,6 +44,9 @@ async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
     waitForHydration(useRoomStore),
   ]);
 
+  // RLS が auth.uid() を前提にしているため、何をするより先に匿名セッションを作る（判断 9）
+  await ensureAnonymousSession();
+
   const { roomId } = useRoomStore.getState();
   const { participantId, isHost } = useUserStore.getState();
 
@@ -51,7 +55,6 @@ async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
   try {
     await useRoomStore.getState().fetchRoom();
     await useRoomStore.getState().fetchParticipants();
-    await useRoomStore.getState().fetchAnswers();
   } catch {
     useUserStore.getState().reset();
     useRoomStore.getState().reset();
@@ -60,7 +63,8 @@ async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
 
   const { status } = useRoomStore.getState();
   if (status === 'finished') return 'Result';
-  if (status === 'playing') return isHost ? 'HostQuiz' : 'GuestQuiz';
+  // ゲストはクイズ中もロビーに留まる（判断 6）
+  if (status === 'playing') return isHost ? 'HostQuiz' : 'GuestLobby';
 
   const me = useRoomStore.getState().participants.find((p) => p.id === participantId);
   const done = (me?.library_tracks?.length ?? 0) > 0 || (me?.skipped_library ?? false);
@@ -123,14 +127,14 @@ export default function App() {
           options={{ title: 'イントロクイズ', headerBackVisible: false }}
         />
         <Stack.Screen
-          name="GuestQuiz"
-          component={GuestQuizScreen}
-          options={{ title: 'イントロクイズ', headerBackVisible: false }}
-        />
-        <Stack.Screen
           name="Result"
           component={ResultScreen}
           options={{ title: '結果', headerBackVisible: false }}
+        />
+        <Stack.Screen
+          name="PreviewLab"
+          component={PreviewLabScreen}
+          options={{ title: 'プレビュー音源ラボ（開発用）' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

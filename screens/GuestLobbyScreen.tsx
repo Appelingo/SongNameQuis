@@ -16,16 +16,25 @@ export function GuestLobbyScreen(_props: Props) {
   useRoomRealtime(roomId);
   useGameNavigation();
 
-  const waiting = status === 'lobby';
+  const playing = status === 'playing';
+
+  // ゲストはクイズ中に操作しない（判断 6）。この画面に留まったまま表示だけ変える。
+  if (playing) {
+    return (
+      <View style={styles.playingContainer}>
+        <Text style={styles.playingTitle}>ゲーム中</Text>
+        <Text style={styles.playingSubtitle}>
+          ホストの画面を見てください。{'\n'}
+          曲が流れたら、声に出して答えましょう。
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{waiting ? '待機中' : 'ゲーム開始'}</Text>
-      <Text style={styles.subtitle}>
-        {waiting
-          ? 'ホストがゲームを準備中...'
-          : 'まもなくクイズが始まります...'}
-      </Text>
+      <Text style={styles.title}>待機中</Text>
+      <Text style={styles.subtitle}>ホストがゲームを準備中...</Text>
       <Text style={styles.roomId}>ルームID: {roomId}</Text>
 
       <Text style={styles.section}>参加者一覧</Text>
@@ -52,6 +61,25 @@ export function GuestLobbyScreen(_props: Props) {
 }
 
 const styles = StyleSheet.create({
+  playingContainer: {
+    flex: 1,
+    backgroundColor: '#0f0f14',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  playingTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  playingSubtitle: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
   container: {
     flex: 1,
     backgroundColor: '#0f0f14',

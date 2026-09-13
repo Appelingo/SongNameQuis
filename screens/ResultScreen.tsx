@@ -8,50 +8,21 @@ import { useUserStore } from '../store/userStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
 
-type RankedParticipant = {
-  id: string;
-  user_name: string;
-  score: number;
-  rank: number;
-};
-
-function rankParticipants(
-  players: { id: string; user_name: string; score: number }[],
-): RankedParticipant[] {
-  const sorted = [...players].sort((a, b) => b.score - a.score);
-  const ranked: RankedParticipant[] = [];
-  let rank = 0;
-  let prevScore: number | null = null;
-
-  sorted.forEach((p, index) => {
-    if (prevScore === null || p.score !== prevScore) {
-      rank = index + 1;
-      prevScore = p.score;
-    }
-    ranked.push({ ...p, rank });
-  });
-
-  return ranked;
-}
-
+/**
+ * 判断 6 により採点を廃止したため、ランキングではなく
+ * 「今日流れた曲」の一覧を出す。「さっきの曲なんだっけ」に答えられるようにするのが目的。
+ */
 export function ResultScreen({ navigation }: Props) {
-  const participants = useRoomStore((s) => s.participants);
-  // rooms.host_id はホストの participants.id と同じ値になっている
-  // （HomeScreen でルーム作成後に更新している）ため、誰から見ても
-  // ホストの行を一意に特定できる。
-  const hostId = useRoomStore((s) => s.hostId);
+  const playlistTracks = useRoomStore((s) => s.playlistTracks);
+  const currentTrackIndex = useRoomStore((s) => s.currentTrackIndex);
   const resetRoom = useRoomStore((s) => s.reset);
-  const myParticipantId = useUserStore((s) => s.participantId);
   const resetUser = useUserStore((s) => s.reset);
 
-  const ranking = useMemo(() => {
-    const players = participants
-      .filter((p) => p.id !== hostId)
-      .map((p) => ({ id: p.id, user_name: p.user_name, score: p.score }));
-    return rankParticipants(players);
-  }, [participants, hostId]);
-
-  const hostName = participants.find((p) => p.id === hostId)?.user_name ?? '';
+  // 実際に流したのは currentTrackIndex の曲まで
+  const playedTracks = useMemo(
+    () => playlistTracks.slice(0, currentTrackIndex + 1),
+    [playlistTracks, currentTrackIndex],
+  );
 
   const handleBackHome = () => {
     resetUser();
@@ -61,28 +32,28 @@ export function ResultScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>結果発表</Text>
-      {hostName ? <Text style={styles.hostLine}>出題者: {hostName}</Text> : null}
+      <Text style={styles.title}>おつかれさまでした</Text>
+      <Text style={styles.subtitle}>今日流れた曲（{playedTracks.length} 曲）</Text>
 
       <FlatList
-        data={ranking}
-        keyExtractor={(item) => item.id}
+        data={playedTracks}
+        keyExtractor={(item, index) => `${item.catalogId}-${index}`}
         style={styles.list}
-        renderItem={({ item }) => {
-          const isMe = item.id === myParticipantId;
-          return (
-            <View style={[styles.row, isMe && styles.rowMe]}>
-              <Text style={styles.rank}>{item.rank}</Text>
-              <Text style={[styles.name, isMe && styles.nameMe]}>
-                {item.user_name}
-                {isMe ? '（あなた）' : ''}
+        renderItem={({ item, index }) => (
+          <View style={styles.row}>
+            <Text style={styles.index}>{index + 1}</Text>
+            <View style={styles.trackInfo}>
+              <Text style={styles.trackTitle} numberOfLines={2}>
+                {item.title}
               </Text>
-              <Text style={styles.score}>{item.score} 問正解</Text>
+              <Text style={styles.trackArtist} numberOfLines={1}>
+                {item.artist}
+              </Text>
             </View>
-          );
-        }}
+          </View>
+        )}
         ListEmptyComponent={
-          <Text style={styles.empty}>参加者がいませんでした</Text>
+          <Text style={styles.empty}>流れた曲がありません</Text>
         }
       />
 
@@ -105,9 +76,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 4,
   },
-  hostLine: {
-    color: '#666',
-    fontSize: 13,
+  subtitle: {
+    color: '#888',
+    fontSize: 14,
     marginBottom: 20,
   },
   list: {
@@ -116,31 +87,28 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#1c1c24',
   },
-  rowMe: {
-    backgroundColor: '#0f1a2e',
-  },
-  rank: {
+  index: {
     width: 32,
-    color: '#888',
-    fontSize: 18,
+    color: '#555',
+    fontSize: 14,
     fontWeight: '700',
   },
-  name: {
+  trackInfo: {
     flex: 1,
+  },
+  trackTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
-  nameMe: {
-    color: '#4da3ff',
-  },
-  score: {
+  trackArtist: {
     color: '#888',
-    fontSize: 14,
+    fontSize: 13,
+    marginTop: 2,
   },
   empty: {
     color: '#666',

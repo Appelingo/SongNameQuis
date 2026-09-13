@@ -4,7 +4,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { supabase } from '../lib/supabase';
 import type {
-  Answer,
   LibraryTrack,
   PlaylistTrack,
   RoomStatus,
@@ -15,6 +14,7 @@ export type Participant = {
   id: string;
   room_id: string;
   user_name: string;
+  user_id: string | null;
   library_tracks: LibraryTrack[];
   skipped_library: boolean;
   score: number;
@@ -30,9 +30,7 @@ type RoomState = {
   playlistTracks: PlaylistTrack[];
   currentTrackIndex: number;
   participants: Participant[];
-  answers: Answer[];
   librarySubmitted: boolean;
-  submittedTrackIndex: number | null;
   setRoom: (payload: {
     roomId: string;
     code?: string | null;
@@ -46,12 +44,8 @@ type RoomState = {
   setParticipants: (participants: Participant[]) => void;
   setLibrarySubmitted: (submitted: boolean) => void;
   upsertParticipant: (participant: Participant) => void;
-  setAnswers: (answers: Answer[]) => void;
-  upsertAnswer: (answer: Answer) => void;
-  setSubmittedTrackIndex: (index: number | null) => void;
   fetchParticipants: () => Promise<void>;
   fetchRoom: () => Promise<void>;
-  fetchAnswers: () => Promise<void>;
   reset: () => void;
 };
 
@@ -64,9 +58,7 @@ const initialState = {
   playlistTracks: [] as PlaylistTrack[],
   currentTrackIndex: 0,
   participants: [] as Participant[],
-  answers: [] as Answer[],
   librarySubmitted: false,
-  submittedTrackIndex: null as number | null,
 };
 
 function hasLibrary(tracks: LibraryTrack[] | null | undefined): boolean {
@@ -158,10 +150,6 @@ export function buildQuizTracks(
   return shuffle(picked);
 }
 
-export function answersForTrack(answers: Answer[], trackIndex: number): Answer[] {
-  return answers.filter((a) => a.track_index === trackIndex);
-}
-
 export const useRoomStore = create<RoomState>()(
   persist(
     (set, get) => ({
@@ -197,18 +185,6 @@ export const useRoomStore = create<RoomState>()(
           next[index] = participant;
           return { participants: next };
         }),
-      setAnswers: (answers) => set({ answers }),
-      upsertAnswer: (answer) =>
-        set((state) => {
-          const index = state.answers.findIndex((a) => a.id === answer.id);
-          if (index === -1) {
-            return { answers: [...state.answers, answer] };
-          }
-          const next = [...state.answers];
-          next[index] = answer;
-          return { answers: next };
-        }),
-      setSubmittedTrackIndex: (submittedTrackIndex) => set({ submittedTrackIndex }),
       fetchParticipants: async () => {
         const roomId = get().roomId;
         if (!roomId) return;
@@ -244,24 +220,12 @@ export const useRoomStore = create<RoomState>()(
           currentTrackIndex: data.current_track_index,
         });
       },
-      fetchAnswers: async () => {
-        const roomId = get().roomId;
-        if (!roomId) return;
-
-        const { data, error } = await supabase
-          .from('answers')
-          .select('*')
-          .eq('room_id', roomId);
-
-        if (error) throw error;
-        set({ answers: (data ?? []) as Answer[] });
-      },
       reset: () => set(initialState),
     }),
     {
       name: 'introq-room',
       storage: createJSONStorage(() => AsyncStorage),
-      // participants / answers / playlistTracks は復帰時に必ず再取得するので
+      // participants / playlistTracks は復帰時に必ず再取得するので
       // 保存しない(古いデータで一瞬描画される方が害になる)
       partialize: (s) => ({ roomId: s.roomId }),
     },

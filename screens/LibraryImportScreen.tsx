@@ -35,7 +35,7 @@ export function LibraryImportScreen({ navigation }: Props) {
     error,
     connectAndFetch,
     prepare,
-  } = useMusicKit({ includeWriteScope: isHost });
+  } = useMusicKit();
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
