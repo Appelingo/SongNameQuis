@@ -132,7 +132,7 @@ export function HomeScreen({ navigation }: Props) {
 
       // プリセットならライブラリ取込は不要なので、そのままロビーへ（判断 10）
       navigation.navigate(
-        room.source_mode === 'preset' ? 'HostLobby' : 'LibraryImport',
+        room.source_mode === 'library' ? 'LibraryImport' : 'HostLobby',
       );
     } catch (e) {
       Alert.alert(
@@ -215,7 +215,7 @@ export function HomeScreen({ navigation }: Props) {
       });
 
       navigation.navigate(
-        room.source_mode === 'preset' ? 'GuestLobby' : 'LibraryImport',
+        room.source_mode === 'library' ? 'LibraryImport' : 'GuestLobby',
       );
     } catch (e) {
       Alert.alert(
@@ -283,6 +283,15 @@ export function HomeScreen({ navigation }: Props) {
 
       <Text style={styles.label}>出題する曲</Text>
       <View style={styles.modeRow}>
+        <Pressable
+          style={[styles.modeChip, sourceMode === 'artist' && styles.modeChipOn]}
+          onPress={() => setSourceMode('artist')}
+        >
+          <Text style={[styles.modeTitle, sourceMode === 'artist' && styles.modeTitleOn]}>
+            アーティスト
+          </Text>
+          <Text style={styles.modeDesc}>指定した人の曲{'\n'}参加者は Apple Music 不要</Text>
+        </Pressable>
         <Pressable
           style={[styles.modeChip, sourceMode === 'preset' && styles.modeChipOn]}
           onPress={() => setSourceMode('preset')}
@@ -394,19 +403,19 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
   },
-  modeRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 24 },
   modeChip: {
     flex: 1,
     backgroundColor: '#1c1c24',
     borderWidth: 1,
     borderColor: '#2a2a35',
     borderRadius: 12,
-    padding: 14,
+    padding: 10,
   },
   modeChipOn: { backgroundColor: '#0a2a4d', borderColor: '#007AFF' },
-  modeTitle: { color: '#ccc', fontSize: 15, fontWeight: '700' },
+  modeTitle: { color: '#ccc', fontSize: 13, fontWeight: '700' },
   modeTitleOn: { color: '#4da3ff' },
-  modeDesc: { color: '#777', fontSize: 11, marginTop: 4, lineHeight: 16 },
+  modeDesc: { color: '#777', fontSize: 10, marginTop: 4, lineHeight: 14 },
   devLink: {
     marginTop: 24,
     alignItems: 'center',

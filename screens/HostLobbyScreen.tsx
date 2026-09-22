@@ -8,16 +8,20 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import { useGameNavigation } from '../hooks/useGameNavigation';
 import { getMusicKitInstance } from '../hooks/useMusicKit';
 import {
+  fetchArtistTopSongs,
   fetchCatalogSongsByIds,
   fetchGenreChartSongs,
   fetchGenres,
   fetchStorefronts,
+  searchArtists,
+  type Artist,
   type Genre,
   type Storefront,
 } from '../lib/appleCatalog';
@@ -25,6 +29,7 @@ import { useRoomRealtime } from '../hooks/useRoomRealtime';
 import { supabase } from '../lib/supabase';
 import type { RootStackParamList } from '../navigation/types';
 import {
+  buildArtistTracks,
   buildPresetTracks,
   buildQuizTracks,
   participantContributed,
@@ -40,6 +45,13 @@ export function HostLobbyScreen(_props: Props) {
   const participants = useRoomStore((s) => s.participants);
   const sourceMode = useRoomStore((s) => s.sourceMode);
   const isPreset = sourceMode === 'preset';
+  const isArtist = sourceMode === 'artist';
+  // どちらもライブラリ取込を通さないモード
+  const isCatalogMode = isPreset || isArtist;
+  const [artistQuery, setArtistQuery] = useState('');
+  const [artistResults, setArtistResults] = useState<Artist[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedArtists, setSelectedArtists] = useState<Artist[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [genreId, setGenreId] = useState<string | null>(null);
   const [storefronts, setStorefronts] = useState<Storefront[]>([]);
@@ -73,6 +85,30 @@ export function HostLobbyScreen(_props: Props) {
     }
   };
 
+  const handleSearchArtists = async () => {
+    const term = artistQuery.trim();
+    if (!term || searching) return;
+    setSearching(true);
+    try {
+      setArtistResults(await searchArtists(term, storefront));
+    } catch (e) {
+      Alert.alert(
+        'エラー',
+        e instanceof Error ? e.message : 'アーティストを検索できませんでした',
+      );
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const toggleArtist = (a: Artist) => {
+    setSelectedArtists((cur) =>
+      cur.some((x) => x.id === a.id)
+        ? cur.filter((x) => x.id !== a.id)
+        : [...cur, a],
+    );
+  };
+
   const handleCopyCode = async () => {
     if (!code) return;
     try {
@@ -93,13 +129,13 @@ export function HostLobbyScreen(_props: Props) {
     [participants],
   );
   // プリセットでは誰もライブラリを出さないので、準備完了の判定を適用しない（判断 10）
-  const allReady = isPreset
+  const allReady = isCatalogMode
     ? participants.length > 0
     : participants.length > 0 && readyCount === participants.length;
 
   // 国一覧の取得と、ホスト自身のストアフロントを初期値にする
   useEffect(() => {
-    if (!isPreset || storefronts.length > 0) return;
+    if (!isCatalogMode || storefronts.length > 0) return;
     void fetchStorefronts()
       .then(async (list) => {
         setStorefronts(list);
@@ -113,7 +149,7 @@ export function HostLobbyScreen(_props: Props) {
         }
       })
       .catch((e) => console.warn('[storefronts] 取得に失敗しました', e));
-  }, [isPreset, storefronts.length]);
+  }, [isCatalogMode, storefronts.length]);
 
   // ジャンル ID はストアフロントごとに異なる（jp の 27 は us では 400 になる）。
   // 国が変わったら必ず取り直し、選択もリセットする。
@@ -140,13 +176,13 @@ export function HostLobbyScreen(_props: Props) {
     if (!allReady) {
       Alert.alert(
         'まだ準備中',
-        isPreset
+        isCatalogMode
           ? '参加者がいません'
           : '全員のライブラリが揃うまでゲームを開始できません',
       );
       return;
     }
-    if (isPreset && !musicConnected) {
+    if (isCatalogMode && !musicConnected) {
       Alert.alert(
         'Apple Music への接続が必要です',
         '曲を再生するホストは Apple Music に接続してください。参加者は不要です。',
@@ -163,7 +199,20 @@ export function HostLobbyScreen(_props: Props) {
       let quizTracks;
       let genreName: string | null = null;
 
-      if (isPreset) {
+      if (isArtist) {
+        if (selectedArtists.length === 0) {
+          throw new Error('アーティストを 1 人以上選んでください');
+        }
+        // アーティストごとに取得し、ラウンドロビンで均等に出題する。
+        // 1 人に偏ると「誰の曲か」で絞られてしまうため。
+        const perArtist = await Promise.all(
+          selectedArtists.map((a) => fetchArtistTopSongs(a.id, storefront)),
+        );
+        quizTracks = buildArtistTracks(perArtist);
+        if (quizTracks.length === 0) {
+          throw new Error('選んだアーティストから出題できる曲が見つかりませんでした');
+        }
+      } else if (isPreset) {
         // プリセットはチャートの時点でプレビュー URL が揃っているので、
         // ライブラリ経路のような後追いのカタログ照会は要らない。
         genreName = genres.find((g) => g.id === genreId)?.name ?? null;
@@ -185,10 +234,13 @@ export function HostLobbyScreen(_props: Props) {
           status: 'playing',
           genre_id: isPreset ? genreId : null,
           genre_name: genreName,
-          storefront: isPreset ? storefront : 'jp',
-          storefront_name: isPreset
+          storefront: isCatalogMode ? storefront : 'jp',
+          storefront_name: isCatalogMode
             ? (storefronts.find((s) => s.id === storefront)?.name ?? null)
             : null,
+          artists: isArtist
+            ? selectedArtists.map((a) => ({ id: a.id, name: a.name }))
+            : [],
         })
         .eq('id', roomId);
 
@@ -258,7 +310,7 @@ export function HostLobbyScreen(_props: Props) {
         </Text>
       </Pressable>
 
-      {isPreset ? (
+      {isCatalogMode ? (
         <>
           <Pressable
             style={[styles.connectBox, musicConnected && styles.connectBoxOn]}
@@ -306,27 +358,95 @@ export function HostLobbyScreen(_props: Props) {
             )}
           </ScrollView>
 
-          <Text style={styles.section}>出題するジャンル</Text>
-          <View style={styles.genreWrap}>
-            {genres.length === 0 ? (
-              <Text style={styles.genreLoading}>ジャンルを読み込み中...</Text>
-            ) : (
-              genres.map((g) => {
-                const on = g.id === genreId;
-                return (
-                  <Pressable
-                    key={g.id}
-                    style={[styles.genreChip, on && styles.genreChipOn]}
-                    onPress={() => setGenreId(g.id)}
-                  >
-                    <Text style={[styles.genreText, on && styles.genreTextOn]}>
-                      {g.name}
-                    </Text>
-                  </Pressable>
-                );
-              })
-            )}
-          </View>
+          {isPreset ? (
+            <>
+              <Text style={styles.section}>出題するジャンル</Text>
+              <View style={styles.genreWrap}>
+                {genres.length === 0 ? (
+                  <Text style={styles.genreLoading}>ジャンルを読み込み中...</Text>
+                ) : (
+                  genres.map((g) => {
+                    const on = g.id === genreId;
+                    return (
+                      <Pressable
+                        key={g.id}
+                        style={[styles.genreChip, on && styles.genreChipOn]}
+                        onPress={() => setGenreId(g.id)}
+                      >
+                        <Text style={[styles.genreText, on && styles.genreTextOn]}>
+                          {g.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.section}>アーティストを探す</Text>
+              <View style={styles.searchRow}>
+                <TextInput
+                  style={styles.searchInput}
+                  value={artistQuery}
+                  onChangeText={setArtistQuery}
+                  placeholder="例: 米津玄師"
+                  placeholderTextColor="#555"
+                  onSubmitEditing={handleSearchArtists}
+                  returnKeyType="search"
+                />
+                <Pressable
+                  style={[styles.searchButton, searching && styles.disabled]}
+                  onPress={handleSearchArtists}
+                  disabled={searching}
+                >
+                  <Text style={styles.searchButtonText}>
+                    {searching ? '...' : '検索'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {selectedArtists.length > 0 && (
+                <>
+                  <Text style={styles.section}>
+                    選択中（{selectedArtists.length} 人）— タップで解除
+                  </Text>
+                  <View style={styles.genreWrap}>
+                    {selectedArtists.map((a) => (
+                      <Pressable
+                        key={a.id}
+                        style={[styles.genreChip, styles.genreChipOn]}
+                        onPress={() => toggleArtist(a)}
+                      >
+                        <Text style={[styles.genreText, styles.genreTextOn]}>
+                          {a.name} ✕
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {artistResults.length > 0 && (
+                <>
+                  <Text style={styles.section}>検索結果 — タップで追加</Text>
+                  <View style={styles.genreWrap}>
+                    {artistResults
+                      .filter((a) => !selectedArtists.some((x) => x.id === a.id))
+                      .map((a) => (
+                        <Pressable
+                          key={a.id}
+                          style={styles.genreChip}
+                          onPress={() => toggleArtist(a)}
+                        >
+                          <Text style={styles.genreText}>{a.name}</Text>
+                        </Pressable>
+                      ))}
+                  </View>
+                </>
+              )}
+            </>
+          )}
           <Text style={styles.section}>参加者 {participants.length} 人</Text>
         </>
       ) : (
@@ -346,7 +466,7 @@ export function HostLobbyScreen(_props: Props) {
             <View style={styles.row}>
               <View style={styles.rowText}>
                 <Text style={styles.name}>{item.user_name}</Text>
-                {!isPreset && (
+                {!isCatalogMode && (
                   <Text style={styles.meta}>
                     {contributed
                       ? `${item.library_tracks.length} 曲受信済み`
@@ -356,7 +476,7 @@ export function HostLobbyScreen(_props: Props) {
                   </Text>
                 )}
               </View>
-              {!isPreset && (
+              {!isCatalogMode && (
                 <View
                   style={[styles.badge, ready ? styles.badgeReady : styles.badgeWait]}
                 >
@@ -374,10 +494,10 @@ export function HostLobbyScreen(_props: Props) {
       <Pressable
         style={[
           styles.primaryButton,
-          (!allReady || starting || (isPreset && !musicConnected)) && styles.disabled,
+          (!allReady || starting || (isCatalogMode && !musicConnected)) && styles.disabled,
         ]}
         onPress={handleStart}
-        disabled={!allReady || starting || (isPreset && !musicConnected)}
+        disabled={!allReady || starting || (isCatalogMode && !musicConnected)}
       >
         {starting ? (
           <ActivityIndicator color="#fff" />
@@ -442,6 +562,25 @@ const styles = StyleSheet.create({
   connectText: { color: '#e8c87a', fontSize: 14, fontWeight: '600' },
   connectTextOn: { color: '#7fd6a8' },
   connectHint: { color: '#8a7a55', fontSize: 11, marginTop: 4, lineHeight: 16 },
+  searchRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#1c1c24',
+    borderWidth: 1,
+    borderColor: '#2a2a35',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#fff',
+    fontSize: 14,
+  },
+  searchButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+  },
+  searchButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   countryRow: { marginBottom: 16, maxHeight: 40 },
   countryRowContent: { gap: 6, alignItems: 'center' },
   genreWrap: {

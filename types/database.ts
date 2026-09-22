@@ -1,6 +1,8 @@
 export type RoomStatus = 'lobby' | 'playing' | 'finished';
 /** 出題曲の供給源（判断 10）。preset はライブラリ取込を通さない */
-export type SourceMode = 'library' | 'preset';
+export type SourceMode = 'library' | 'preset' | 'artist';
+/** 出題に使うアーティスト（判断 11）。ID はストアフロント依存 */
+export type RoomArtist = { id: string; name: string };
 export type TrackPhase = 'intro' | 'answering' | 'revealed';
 
 export type LibraryTrack = {
@@ -46,6 +48,7 @@ export type Database = {
           source_mode: SourceMode;
           storefront: string;
           storefront_name: string | null;
+          artists: RoomArtist[];
           genre_id: string | null;
           genre_name: string | null;
           status: RoomStatus;
@@ -62,6 +65,7 @@ export type Database = {
           source_mode?: SourceMode;
           storefront?: string;
           storefront_name?: string | null;
+          artists?: RoomArtist[];
           genre_id?: string | null;
           genre_name?: string | null;
           status?: RoomStatus;
@@ -78,6 +82,7 @@ export type Database = {
           source_mode?: SourceMode;
           storefront?: string;
           storefront_name?: string | null;
+          artists?: RoomArtist[];
           genre_id?: string | null;
           genre_name?: string | null;
           status?: RoomStatus;

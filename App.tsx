@@ -66,8 +66,8 @@ async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
   // ゲストはクイズ中もロビーに留まる（判断 6）
   if (status === 'playing') return isHost ? 'HostQuiz' : 'GuestLobby';
 
-  // プリセットではライブラリ取込を通さない（判断 10）
-  if (useRoomStore.getState().sourceMode === 'preset') {
+  // プリセット・アーティスト指定ではライブラリ取込を通さない（判断 10 / 11）
+  if (useRoomStore.getState().sourceMode !== 'library') {
     return isHost ? 'HostLobby' : 'GuestLobby';
   }
 

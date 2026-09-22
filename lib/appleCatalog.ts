@@ -237,3 +237,78 @@ export async function fetchStorefronts(): Promise<Storefront[]> {
 
   return [...priority, ...rest];
 }
+
+export type Artist = {
+  id: string;
+  name: string;
+  genres: string[];
+  artworkUrl: string | null;
+};
+
+/** アーティストを名前で検索する（判断 11） */
+export async function searchArtists(
+  term: string,
+  storefront = 'jp',
+  limit = 10,
+): Promise<Artist[]> {
+  const token = getDeveloperToken();
+  if (!token) throw new Error('Apple Music の developer token が未設定です');
+
+  const res = await fetch(
+    `https://api.music.apple.com/v1/catalog/${storefront}/search` +
+      `?term=${encodeURIComponent(term)}&types=artists&limit=${limit}&l=ja`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`アーティスト検索に失敗しました (HTTP ${res.status})`);
+
+  const json = (await res.json()) as {
+    results?: {
+      artists?: {
+        data?: {
+          id: string;
+          attributes?: {
+            name?: string;
+            genreNames?: string[];
+            artwork?: { url?: string };
+          };
+        }[];
+      };
+    };
+  };
+
+  return (json.results?.artists?.data ?? []).map((a) => ({
+    id: a.id,
+    name: a.attributes?.name ?? '',
+    genres: a.attributes?.genreNames ?? [],
+    artworkUrl:
+      a.attributes?.artwork?.url?.replace('{w}', '80').replace('{h}', '80') ??
+      null,
+  }));
+}
+
+/**
+ * アーティストの人気曲を取得する（判断 11）。
+ *
+ * `artists/{id}/songs` は limit の上限が 20 で弾かれるため使わない。
+ * `view/top-songs` なら 100 曲まで、しかも人気順で取れる。
+ */
+export async function fetchArtistTopSongs(
+  artistId: string,
+  storefront = 'jp',
+  limit = 100,
+): Promise<CatalogSong[]> {
+  const token = getDeveloperToken();
+  if (!token) throw new Error('Apple Music の developer token が未設定です');
+
+  const res = await fetch(
+    `https://api.music.apple.com/v1/catalog/${storefront}/artists/${artistId}` +
+      `/view/top-songs?limit=${limit}&l=ja`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`アーティストの曲の取得に失敗しました (HTTP ${res.status})`);
+
+  // この endpoint は { next, data: [...] } と直接返る
+  // （artists/{id}?views=top-songs の入れ子とは形が違う）
+  const json = (await res.json()) as { data?: CatalogSongJson[] };
+  return (json.data ?? []).map(toCatalogSong).filter((s) => s.previewUrl !== null);
+}

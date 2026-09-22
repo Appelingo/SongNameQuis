@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import type {
   LibraryTrack,
   PlaylistTrack,
+  RoomArtist,
   RoomStatus,
   SourceMode,
   TrackPhase,
@@ -30,6 +31,7 @@ type RoomState = {
   storefrontName: string | null;
   genreId: string | null;
   genreName: string | null;
+  artists: RoomArtist[];
   status: RoomStatus;
   phase: TrackPhase;
   hostId: string | null;
@@ -45,6 +47,7 @@ type RoomState = {
     storefrontName?: string | null;
     genreId?: string | null;
     genreName?: string | null;
+    artists?: RoomArtist[];
     status?: RoomStatus;
     phase?: TrackPhase;
     hostId?: string | null;
@@ -68,6 +71,7 @@ const initialState = {
   storefrontName: null as string | null,
   genreId: null as string | null,
   genreName: null as string | null,
+  artists: [] as RoomArtist[],
   status: 'lobby' as RoomStatus,
   phase: 'intro' as TrackPhase,
   hostId: null as string | null,
@@ -178,6 +182,7 @@ export const useRoomStore = create<RoomState>()(
         storefrontName = null,
         genreId = null,
         genreName = null,
+        artists = [],
         status = 'lobby',
         phase = 'intro',
         hostId = null,
@@ -192,6 +197,7 @@ export const useRoomStore = create<RoomState>()(
           storefrontName,
           genreId,
           genreName,
+          artists,
           status,
           phase,
           hostId,
@@ -244,6 +250,7 @@ export const useRoomStore = create<RoomState>()(
           storefrontName: data.storefront_name,
           genreId: data.genre_id,
           genreName: data.genre_name,
+          artists: (data.artists ?? []) as RoomArtist[],
           status: data.status,
           phase: data.phase,
           hostId: data.host_id,
@@ -283,4 +290,46 @@ export function buildPresetTracks(
         previewUrl: s.previewUrl,
       })),
   ).slice(0, limit);
+}
+
+/**
+ * 複数アーティストの曲から出題リストを作る（判断 11）。
+ * 1 人に偏ると「誰の曲か」で当てられてしまうので、
+ * ライブラリ経路と同じくラウンドロビンで人数ぶん均等に取る。
+ */
+export function buildArtistTracks(
+  perArtistSongs: { id: string; title: string; artist: string; previewUrl: string | null }[][],
+  options: { limit?: number } = {},
+): PlaylistTrack[] {
+  const limit = options.limit ?? QUIZ_TRACK_LIMIT;
+  const seen = new Set<string>();
+
+  const lists = shuffle(perArtistSongs).map((songs) => {
+    const list: PlaylistTrack[] = [];
+    for (const s of songs) {
+      if (!s.previewUrl || !s.title || seen.has(s.id)) continue;
+      seen.add(s.id);
+      list.push({
+        title: s.title,
+        artist: s.artist,
+        catalogId: s.id,
+        previewUrl: s.previewUrl,
+      });
+    }
+    return shuffle(list);
+  });
+
+  const picked: PlaylistTrack[] = [];
+  for (let i = 0; picked.length < limit; i++) {
+    let advanced = false;
+    for (const list of lists) {
+      if (i >= list.length) continue;
+      picked.push(list[i]);
+      advanced = true;
+      if (picked.length >= limit) break;
+    }
+    if (!advanced) break;
+  }
+
+  return shuffle(picked);
 }

@@ -12,7 +12,7 @@ export function GuestLobbyScreen(_props: Props) {
   const roomId = useRoomStore((s) => s.roomId);
   const status = useRoomStore((s) => s.status);
   const participants = useRoomStore((s) => s.participants);
-  const isPreset = useRoomStore((s) => s.sourceMode) === 'preset';
+  const isCatalogMode = useRoomStore((s) => s.sourceMode) !== 'library';
 
   useRoomRealtime(roomId);
   useGameNavigation();
@@ -36,8 +36,8 @@ export function GuestLobbyScreen(_props: Props) {
     <View style={styles.container}>
       <Text style={styles.title}>待機中</Text>
       <Text style={styles.subtitle}>
-        {isPreset
-          ? 'ホストがジャンルを選んでいます...'
+        {isCatalogMode
+          ? 'ホストが出題内容を選んでいます...'
           : 'ホストがゲームを準備中...'}
       </Text>
       <Text style={styles.roomId}>ルームID: {roomId}</Text>
@@ -51,7 +51,7 @@ export function GuestLobbyScreen(_props: Props) {
           return (
             <View style={styles.row}>
               <Text style={styles.name}>{item.user_name}</Text>
-              {!isPreset && (
+              {!isCatalogMode && (
                 <Text style={[styles.status, ready ? styles.ready : styles.wait]}>
                   {ready ? '準備完了' : 'ライブラリ待ち'}
                 </Text>
