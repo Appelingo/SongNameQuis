@@ -39,11 +39,34 @@ export function HostLobbyScreen(_props: Props) {
   const isPreset = sourceMode === 'preset';
   const [genres, setGenres] = useState<Genre[]>([]);
   const [genreId, setGenreId] = useState<string | null>(null);
+  // プリセットでもホストは Apple Music 認証が必須（判断 10 の追記）。
+  // 「契約者が自分の権限で鳴らし、同席者が聴く」構図に揃えるため。
+  const [musicConnected, setMusicConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useRoomRealtime(roomId);
   useGameNavigation();
+
+  const handleConnectMusic = async () => {
+    if (connecting) return;
+    setConnecting(true);
+    try {
+      const music = await getMusicKitInstance();
+      setMusicConnected(music.isAuthorized);
+      if (!music.isAuthorized) {
+        Alert.alert('接続できませんでした', 'Apple Music の認証が完了しませんでした');
+      }
+    } catch (e) {
+      Alert.alert(
+        'エラー',
+        e instanceof Error ? e.message : 'Apple Music に接続できませんでした',
+      );
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   const handleCopyCode = async () => {
     if (!code) return;
@@ -93,6 +116,13 @@ export function HostLobbyScreen(_props: Props) {
         isPreset
           ? '参加者がいません'
           : '全員のライブラリが揃うまでゲームを開始できません',
+      );
+      return;
+    }
+    if (isPreset && !musicConnected) {
+      Alert.alert(
+        'Apple Music への接続が必要です',
+        '曲を再生するホストは Apple Music に接続してください。参加者は不要です。',
       );
       return;
     }
@@ -199,6 +229,25 @@ export function HostLobbyScreen(_props: Props) {
 
       {isPreset ? (
         <>
+          <Pressable
+            style={[styles.connectBox, musicConnected && styles.connectBoxOn]}
+            onPress={musicConnected ? undefined : handleConnectMusic}
+            disabled={musicConnected || connecting}
+          >
+            <Text style={[styles.connectText, musicConnected && styles.connectTextOn]}>
+              {connecting
+                ? '接続中...'
+                : musicConnected
+                  ? 'Apple Music に接続済み'
+                  : 'Apple Music に接続する（ホストのみ必要）'}
+            </Text>
+            {!musicConnected && !connecting && (
+              <Text style={styles.connectHint}>
+                曲を再生するホストの接続が必要です。参加者は不要です。
+              </Text>
+            )}
+          </Pressable>
+
           <Text style={styles.section}>出題するジャンル</Text>
           <View style={styles.genreWrap}>
             {genres.length === 0 ? (
@@ -265,9 +314,12 @@ export function HostLobbyScreen(_props: Props) {
       />
 
       <Pressable
-        style={[styles.primaryButton, (!allReady || starting) && styles.disabled]}
+        style={[
+          styles.primaryButton,
+          (!allReady || starting || (isPreset && !musicConnected)) && styles.disabled,
+        ]}
         onPress={handleStart}
-        disabled={!allReady || starting}
+        disabled={!allReady || starting || (isPreset && !musicConnected)}
       >
         {starting ? (
           <ActivityIndicator color="#fff" />
@@ -320,6 +372,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 8,
   },
+  connectBox: {
+    backgroundColor: '#2a2416',
+    borderWidth: 1,
+    borderColor: '#5c4a2a',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  connectBoxOn: { backgroundColor: '#0a3d2a', borderColor: '#1c6b4a' },
+  connectText: { color: '#e8c87a', fontSize: 14, fontWeight: '600' },
+  connectTextOn: { color: '#7fd6a8' },
+  connectHint: { color: '#8a7a55', fontSize: 11, marginTop: 4, lineHeight: 16 },
   genreWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',

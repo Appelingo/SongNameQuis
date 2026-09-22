@@ -290,7 +290,7 @@ export function HomeScreen({ navigation }: Props) {
           <Text style={[styles.modeTitle, sourceMode === 'preset' && styles.modeTitleOn]}>
             ジャンルから
           </Text>
-          <Text style={styles.modeDesc}>人気曲から出題{'\n'}Apple Music 不要</Text>
+          <Text style={styles.modeDesc}>人気曲から出題{'\n'}参加者は Apple Music 不要</Text>
         </Pressable>
         <Pressable
           style={[styles.modeChip, sourceMode === 'library' && styles.modeChipOn]}
@@ -299,7 +299,7 @@ export function HomeScreen({ navigation }: Props) {
           <Text style={[styles.modeTitle, sourceMode === 'library' && styles.modeTitleOn]}>
             みんなの曲から
           </Text>
-          <Text style={styles.modeDesc}>各自のライブラリ{'\n'}Apple Music が必要</Text>
+          <Text style={styles.modeDesc}>各自のライブラリ{'\n'}全員 Apple Music が必要</Text>
         </Pressable>
       </View>
 
