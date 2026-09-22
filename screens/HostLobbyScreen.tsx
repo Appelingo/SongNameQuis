@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,11 +12,17 @@ import {
 
 import { useGameNavigation } from '../hooks/useGameNavigation';
 import { getMusicKitInstance } from '../hooks/useMusicKit';
-import { fetchCatalogSongsByIds } from '../lib/appleCatalog';
+import {
+  fetchCatalogSongsByIds,
+  fetchGenreChartSongs,
+  fetchGenres,
+  type Genre,
+} from '../lib/appleCatalog';
 import { useRoomRealtime } from '../hooks/useRoomRealtime';
 import { supabase } from '../lib/supabase';
 import type { RootStackParamList } from '../navigation/types';
 import {
+  buildPresetTracks,
   buildQuizTracks,
   participantContributed,
   participantReady,
@@ -29,6 +35,10 @@ export function HostLobbyScreen(_props: Props) {
   const roomId = useRoomStore((s) => s.roomId);
   const code = useRoomStore((s) => s.code);
   const participants = useRoomStore((s) => s.participants);
+  const sourceMode = useRoomStore((s) => s.sourceMode);
+  const isPreset = sourceMode === 'preset';
+  const [genres, setGenres] = useState<Genre[]>([]);
+  const [genreId, setGenreId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -54,8 +64,23 @@ export function HostLobbyScreen(_props: Props) {
     () => participants.filter(participantContributed).length,
     [participants],
   );
-  const allReady =
-    participants.length > 0 && readyCount === participants.length;
+  // プリセットでは誰もライブラリを出さないので、準備完了の判定を適用しない（判断 10）
+  const allReady = isPreset
+    ? participants.length > 0
+    : participants.length > 0 && readyCount === participants.length;
+
+  useEffect(() => {
+    if (!isPreset || genres.length > 0) return;
+    void fetchGenres()
+      .then((list) => {
+        setGenres(list);
+        setGenreId((current) => current ?? list[0]?.id ?? null);
+      })
+      .catch((e) => {
+        console.warn('[genres] 取得に失敗しました', e);
+        Alert.alert('エラー', 'ジャンル一覧を取得できませんでした');
+      });
+  }, [isPreset, genres.length]);
 
   const handleStart = async () => {
     if (!roomId) {
@@ -65,13 +90,70 @@ export function HostLobbyScreen(_props: Props) {
     if (!allReady) {
       Alert.alert(
         'まだ準備中',
-        '全員のライブラリが揃うまでゲームを開始できません',
+        isPreset
+          ? '参加者がいません'
+          : '全員のライブラリが揃うまでゲームを開始できません',
       );
+      return;
+    }
+    if (isPreset && !genreId) {
+      Alert.alert('ジャンル未選択', '出題するジャンルを選んでください');
       return;
     }
 
     setStarting(true);
     try {
+      let quizTracks;
+      let genreName: string | null = null;
+
+      if (isPreset) {
+        // プリセットはチャートの時点でプレビュー URL が揃っているので、
+        // ライブラリ経路のような後追いのカタログ照会は要らない。
+        genreName = genres.find((g) => g.id === genreId)?.name ?? null;
+        const songs = await fetchGenreChartSongs(genreId!);
+        quizTracks = buildPresetTracks(songs);
+        if (quizTracks.length === 0) {
+          throw new Error('このジャンルから出題できる曲が見つかりませんでした');
+        }
+      } else {
+        quizTracks = await buildFromLibraries();
+      }
+
+      const { error } = await supabase
+        .from('rooms')
+        .update({
+          playlist_tracks: quizTracks,
+          current_track_index: 0,
+          phase: 'intro',
+          status: 'playing',
+          genre_id: isPreset ? genreId : null,
+          genre_name: genreName,
+        })
+        .eq('id', roomId);
+
+      if (error) throw error;
+
+      // 出題リストを作った時点で、個人のライブラリはもう不要。
+      // 音楽の趣味は個人を推測させ得る情報なので、保持し続けない。
+      const { error: clearError } = await supabase.rpc('clear_room_libraries', {
+        target_room: roomId,
+      });
+      if (clearError) {
+        console.warn('[cleanup] ライブラリの削除に失敗しました', clearError);
+      }
+      // 画面遷移は useGameNavigation が status の変化を受けて行う
+    } catch (e) {
+      Alert.alert(
+        'エラー',
+        e instanceof Error ? e.message : 'ゲーム開始に失敗しました',
+      );
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  /** ライブラリ経路の出題リスト生成（従来どおり） */
+  const buildFromLibraries = async () => {
       const candidates = buildQuizTracks(participants);
       if (candidates.length === 0) {
         throw new Error(
@@ -100,38 +182,7 @@ export function HostLobbyScreen(_props: Props) {
           '出題できる曲がありません。プレビュー音源が取得できる曲が 1 曲もありませんでした。',
         );
       }
-
-      const { error } = await supabase
-        .from('rooms')
-        .update({
-          playlist_tracks: quizTracks,
-          current_track_index: 0,
-          phase: 'intro',
-          status: 'playing',
-        })
-        .eq('id', roomId);
-
-      if (error) throw error;
-
-      // 出題リストを作った時点で、個人のライブラリはもう不要。
-      // 音楽の趣味は個人を推測させ得る情報なので、保持し続けない。
-      // 失敗してもゲームは続行する（次回の開始時にも消える機会がある）。
-      const { error: clearError } = await supabase.rpc('clear_room_libraries', {
-        target_room: roomId,
-      });
-      if (clearError) {
-        console.warn('[cleanup] ライブラリの削除に失敗しました', clearError);
-      }
-
-      // 画面遷移は useGameNavigation が status の変化を受けて行う
-    } catch (e) {
-      Alert.alert(
-        'エラー',
-        e instanceof Error ? e.message : 'ゲーム開始に失敗しました',
-      );
-    } finally {
-      setStarting(false);
-    }
+      return quizTracks;
   };
 
   return (
@@ -146,9 +197,36 @@ export function HostLobbyScreen(_props: Props) {
         </Text>
       </Pressable>
 
-      <Text style={styles.section}>
-        参加者 {readyCount}/{participants.length} 準備完了（うち {contributorCount} 人が曲を提供）
-      </Text>
+      {isPreset ? (
+        <>
+          <Text style={styles.section}>出題するジャンル</Text>
+          <View style={styles.genreWrap}>
+            {genres.length === 0 ? (
+              <Text style={styles.genreLoading}>ジャンルを読み込み中...</Text>
+            ) : (
+              genres.map((g) => {
+                const on = g.id === genreId;
+                return (
+                  <Pressable
+                    key={g.id}
+                    style={[styles.genreChip, on && styles.genreChipOn]}
+                    onPress={() => setGenreId(g.id)}
+                  >
+                    <Text style={[styles.genreText, on && styles.genreTextOn]}>
+                      {g.name}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+          <Text style={styles.section}>参加者 {participants.length} 人</Text>
+        </>
+      ) : (
+        <Text style={styles.section}>
+          参加者 {readyCount}/{participants.length} 準備完了（うち {contributorCount} 人が曲を提供）
+        </Text>
+      )}
 
       <FlatList
         data={participants}
@@ -161,19 +239,23 @@ export function HostLobbyScreen(_props: Props) {
             <View style={styles.row}>
               <View style={styles.rowText}>
                 <Text style={styles.name}>{item.user_name}</Text>
-                <Text style={styles.meta}>
-                  {contributed
-                    ? `${item.library_tracks.length} 曲受信済み`
-                    : item.skipped_library
-                      ? '曲なしで参加'
-                      : 'ライブラリ待ち'}
-                </Text>
+                {!isPreset && (
+                  <Text style={styles.meta}>
+                    {contributed
+                      ? `${item.library_tracks.length} 曲受信済み`
+                      : item.skipped_library
+                        ? '曲なしで参加'
+                        : 'ライブラリ待ち'}
+                  </Text>
+                )}
               </View>
-              <View
-                style={[styles.badge, ready ? styles.badgeReady : styles.badgeWait]}
-              >
-                <Text style={styles.badgeText}>{ready ? 'OK' : '…'}</Text>
-              </View>
+              {!isPreset && (
+                <View
+                  style={[styles.badge, ready ? styles.badgeReady : styles.badgeWait]}
+                >
+                  <Text style={styles.badgeText}>{ready ? 'OK' : '…'}</Text>
+                </View>
+              )}
             </View>
           );
         }}
@@ -238,6 +320,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 8,
   },
+  genreWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 20,
+  },
+  genreLoading: { color: '#666', fontSize: 13 },
+  genreChip: {
+    backgroundColor: '#1c1c24',
+    borderWidth: 1,
+    borderColor: '#2a2a35',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  genreChipOn: { backgroundColor: '#0a2a4d', borderColor: '#007AFF' },
+  genreText: { color: '#999', fontSize: 13, fontWeight: '600' },
+  genreTextOn: { color: '#4da3ff' },
   list: {
     flex: 1,
   },

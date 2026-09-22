@@ -7,6 +7,7 @@ import type {
   LibraryTrack,
   PlaylistTrack,
   RoomStatus,
+  SourceMode,
   TrackPhase,
 } from '../types/database';
 
@@ -24,6 +25,9 @@ export type Participant = {
 type RoomState = {
   roomId: string | null;
   code: string | null;
+  sourceMode: SourceMode;
+  genreId: string | null;
+  genreName: string | null;
   status: RoomStatus;
   phase: TrackPhase;
   hostId: string | null;
@@ -34,6 +38,9 @@ type RoomState = {
   setRoom: (payload: {
     roomId: string;
     code?: string | null;
+    sourceMode?: SourceMode;
+    genreId?: string | null;
+    genreName?: string | null;
     status?: RoomStatus;
     phase?: TrackPhase;
     hostId?: string | null;
@@ -52,6 +59,9 @@ type RoomState = {
 const initialState = {
   roomId: null as string | null,
   code: null as string | null,
+  sourceMode: 'library' as SourceMode,
+  genreId: null as string | null,
+  genreName: null as string | null,
   status: 'lobby' as RoomStatus,
   phase: 'intro' as TrackPhase,
   hostId: null as string | null,
@@ -157,6 +167,9 @@ export const useRoomStore = create<RoomState>()(
       setRoom: ({
         roomId,
         code = null,
+        sourceMode = 'library',
+        genreId = null,
+        genreName = null,
         status = 'lobby',
         phase = 'intro',
         hostId = null,
@@ -166,6 +179,9 @@ export const useRoomStore = create<RoomState>()(
         set({
           roomId,
           code,
+          sourceMode,
+          genreId,
+          genreName,
           status,
           phase,
           hostId,
@@ -213,6 +229,9 @@ export const useRoomStore = create<RoomState>()(
 
         set({
           code: data.code,
+          sourceMode: data.source_mode,
+          genreId: data.genre_id,
+          genreName: data.genre_name,
           status: data.status,
           phase: data.phase,
           hostId: data.host_id,
@@ -231,3 +250,25 @@ export const useRoomStore = create<RoomState>()(
     },
   ),
 );
+
+/**
+ * ジャンル別チャートから出題リストを作る（判断 10）。
+ * ライブラリと違い参加者ごとの公平性を考える必要がないので、
+ * シャッフルして先頭から切るだけでよい。
+ */
+export function buildPresetTracks(
+  songs: { id: string; title: string; artist: string; previewUrl: string | null }[],
+  options: { limit?: number } = {},
+): PlaylistTrack[] {
+  const limit = options.limit ?? QUIZ_TRACK_LIMIT;
+  return shuffle(
+    songs
+      .filter((s) => s.previewUrl !== null && s.title)
+      .map((s) => ({
+        title: s.title,
+        artist: s.artist,
+        catalogId: s.id,
+        previewUrl: s.previewUrl,
+      })),
+  ).slice(0, limit);
+}

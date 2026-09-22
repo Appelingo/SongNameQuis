@@ -1,4 +1,6 @@
 export type RoomStatus = 'lobby' | 'playing' | 'finished';
+/** 出題曲の供給源（判断 10）。preset はライブラリ取込を通さない */
+export type SourceMode = 'library' | 'preset';
 export type TrackPhase = 'intro' | 'answering' | 'revealed';
 
 export type LibraryTrack = {
@@ -41,6 +43,9 @@ export type Database = {
           host_id: string;
           /** ルームを作った匿名ユーザーの auth.uid()。RLS の所有権判定に使う（判断 9） */
           host_user_id: string | null;
+          source_mode: SourceMode;
+          genre_id: string | null;
+          genre_name: string | null;
           status: RoomStatus;
           phase: TrackPhase;
           playlist_tracks: PlaylistTrack[];
@@ -52,6 +57,9 @@ export type Database = {
           code?: string | null;
           host_id: string;
           host_user_id?: string | null;
+          source_mode?: SourceMode;
+          genre_id?: string | null;
+          genre_name?: string | null;
           status?: RoomStatus;
           phase?: TrackPhase;
           playlist_tracks?: PlaylistTrack[];
@@ -63,6 +71,9 @@ export type Database = {
           code?: string | null;
           host_id?: string;
           host_user_id?: string | null;
+          source_mode?: SourceMode;
+          genre_id?: string | null;
+          genre_name?: string | null;
           status?: RoomStatus;
           phase?: TrackPhase;
           playlist_tracks?: PlaylistTrack[];
@@ -166,6 +177,7 @@ export type Database = {
     };
     Enums: {
       room_status: RoomStatus;
+      source_mode: SourceMode;
       track_phase: TrackPhase;
     };
     CompositeTypes: Record<string, never>;

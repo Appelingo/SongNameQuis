@@ -138,3 +138,58 @@ export async function fetchCatalogSongsByIds(
 
   return result;
 }
+
+export type Genre = {
+  id: string;
+  name: string;
+};
+
+/**
+ * ジャンル一覧を取得する（判断 10）。
+ * 「ミュージック」のような包括的なものも含めて API が返すまま提示する。
+ */
+export async function fetchGenres(storefront = 'jp'): Promise<Genre[]> {
+  const token = getDeveloperToken();
+  if (!token) throw new Error('Apple Music の developer token が未設定です');
+
+  const res = await fetch(
+    `https://api.music.apple.com/v1/catalog/${storefront}/genres?limit=30&l=ja`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`ジャンル一覧の取得に失敗しました (HTTP ${res.status})`);
+
+  const json = (await res.json()) as {
+    data?: { id: string; attributes?: { name?: string } }[];
+  };
+  return (json.data ?? []).map((g) => ({
+    id: g.id,
+    name: g.attributes?.name ?? g.id,
+  }));
+}
+
+/**
+ * ジャンル別の人気チャートを取得する（判断 10）。
+ * 実測で全ジャンル 100 曲すべてにプレビュー音源があるが、
+ * 念のため無い曲は除外する（プレビューが無いと出題できないため）。
+ */
+export async function fetchGenreChartSongs(
+  genreId: string,
+  storefront = 'jp',
+  limit = 100,
+): Promise<CatalogSong[]> {
+  const token = getDeveloperToken();
+  if (!token) throw new Error('Apple Music の developer token が未設定です');
+
+  const res = await fetch(
+    `https://api.music.apple.com/v1/catalog/${storefront}/charts` +
+      `?types=songs&genre=${encodeURIComponent(genreId)}&limit=${limit}&l=ja`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`チャートの取得に失敗しました (HTTP ${res.status})`);
+
+  const json = (await res.json()) as {
+    results?: { songs?: { data?: CatalogSongJson[] }[] };
+  };
+  const songs = json.results?.songs?.[0]?.data ?? [];
+  return songs.map(toCatalogSong).filter((s) => s.previewUrl !== null);
+}

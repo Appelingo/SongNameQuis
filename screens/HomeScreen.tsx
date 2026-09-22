@@ -14,6 +14,7 @@ import * as Crypto from 'expo-crypto';
 import { generateRoomCode, normalizeRoomCode } from '../lib/roomCode';
 import { ensureAnonymousSession, supabase } from '../lib/supabase';
 import type { RootStackParamList } from '../navigation/types';
+import type { SourceMode } from '../types/database';
 import { useRoomStore } from '../store/roomStore';
 import { useUserStore } from '../store/userStore';
 
@@ -28,6 +29,7 @@ export function HomeScreen({ navigation }: Props) {
   const [roomCode, setRoomCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'select' | 'join'>('select');
+  const [sourceMode, setSourceMode] = useState<SourceMode>('preset');
 
   const setSession = useUserStore((s) => s.setSession);
   const resetUser = useUserStore((s) => s.reset);
@@ -58,13 +60,24 @@ export function HomeScreen({ navigation }: Props) {
       const userId = await ensureAnonymousSession();
 
       // コードの衝突は稀だが、念のため数回だけ再試行する
-      let room: { id: string; code: string | null; status: 'lobby' | 'playing' | 'finished'; host_id: string } | null = null;
+      let room: {
+        id: string;
+        code: string | null;
+        status: 'lobby' | 'playing' | 'finished';
+        host_id: string;
+        source_mode: SourceMode;
+      } | null = null;
       let lastError: unknown = null;
       for (let attempt = 0; attempt < 3 && !room; attempt++) {
         const { data, error } = await supabase
           .from('rooms')
-          .insert({ host_id: hostId, code: generateRoomCode(), host_user_id: userId })
-          .select('id, code, status, host_id')
+          .insert({
+            host_id: hostId,
+            code: generateRoomCode(),
+            host_user_id: userId,
+            source_mode: sourceMode,
+          })
+          .select('id, code, status, host_id, source_mode')
           .single();
 
         if (!error && data) {
@@ -112,11 +125,15 @@ export function HomeScreen({ navigation }: Props) {
       setRoom({
         roomId: room.id,
         code: room.code,
+        sourceMode: room.source_mode,
         status: room.status,
         hostId: participant.id,
       });
 
-      navigation.navigate('LibraryImport');
+      // プリセットならライブラリ取込は不要なので、そのままロビーへ（判断 10）
+      navigation.navigate(
+        room.source_mode === 'preset' ? 'HostLobby' : 'LibraryImport',
+      );
     } catch (e) {
       Alert.alert(
         'エラー',
@@ -147,7 +164,7 @@ export function HomeScreen({ navigation }: Props) {
 
       const { data: room, error: roomError } = await supabase
         .from('rooms')
-        .select('id, code, status, host_id')
+        .select('id, code, status, host_id, source_mode')
         .eq('code', code)
         .single();
 
@@ -192,11 +209,14 @@ export function HomeScreen({ navigation }: Props) {
       setRoom({
         roomId: room.id,
         code: room.code,
+        sourceMode: room.source_mode,
         status: room.status,
         hostId: room.host_id,
       });
 
-      navigation.navigate('LibraryImport');
+      navigation.navigate(
+        room.source_mode === 'preset' ? 'GuestLobby' : 'LibraryImport',
+      );
     } catch (e) {
       Alert.alert(
         'エラー',
@@ -260,6 +280,28 @@ export function HomeScreen({ navigation }: Props) {
         placeholder="例: たろう"
         autoCapitalize="none"
       />
+
+      <Text style={styles.label}>出題する曲</Text>
+      <View style={styles.modeRow}>
+        <Pressable
+          style={[styles.modeChip, sourceMode === 'preset' && styles.modeChipOn]}
+          onPress={() => setSourceMode('preset')}
+        >
+          <Text style={[styles.modeTitle, sourceMode === 'preset' && styles.modeTitleOn]}>
+            ジャンルから
+          </Text>
+          <Text style={styles.modeDesc}>人気曲から出題{'\n'}Apple Music 不要</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeChip, sourceMode === 'library' && styles.modeChipOn]}
+          onPress={() => setSourceMode('library')}
+        >
+          <Text style={[styles.modeTitle, sourceMode === 'library' && styles.modeTitleOn]}>
+            みんなの曲から
+          </Text>
+          <Text style={styles.modeDesc}>各自のライブラリ{'\n'}Apple Music が必要</Text>
+        </Pressable>
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#007AFF" />
@@ -352,6 +394,19 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
   },
+  modeRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
+  modeChip: {
+    flex: 1,
+    backgroundColor: '#1c1c24',
+    borderWidth: 1,
+    borderColor: '#2a2a35',
+    borderRadius: 12,
+    padding: 14,
+  },
+  modeChipOn: { backgroundColor: '#0a2a4d', borderColor: '#007AFF' },
+  modeTitle: { color: '#ccc', fontSize: 15, fontWeight: '700' },
+  modeTitleOn: { color: '#4da3ff' },
+  modeDesc: { color: '#777', fontSize: 11, marginTop: 4, lineHeight: 16 },
   devLink: {
     marginTop: 24,
     alignItems: 'center',
