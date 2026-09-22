@@ -26,6 +26,8 @@ type RoomState = {
   roomId: string | null;
   code: string | null;
   sourceMode: SourceMode;
+  storefront: string;
+  storefrontName: string | null;
   genreId: string | null;
   genreName: string | null;
   status: RoomStatus;
@@ -39,6 +41,8 @@ type RoomState = {
     roomId: string;
     code?: string | null;
     sourceMode?: SourceMode;
+    storefront?: string;
+    storefrontName?: string | null;
     genreId?: string | null;
     genreName?: string | null;
     status?: RoomStatus;
@@ -60,6 +64,8 @@ const initialState = {
   roomId: null as string | null,
   code: null as string | null,
   sourceMode: 'library' as SourceMode,
+  storefront: 'jp',
+  storefrontName: null as string | null,
   genreId: null as string | null,
   genreName: null as string | null,
   status: 'lobby' as RoomStatus,
@@ -168,6 +174,8 @@ export const useRoomStore = create<RoomState>()(
         roomId,
         code = null,
         sourceMode = 'library',
+        storefront = 'jp',
+        storefrontName = null,
         genreId = null,
         genreName = null,
         status = 'lobby',
@@ -180,6 +188,8 @@ export const useRoomStore = create<RoomState>()(
           roomId,
           code,
           sourceMode,
+          storefront,
+          storefrontName,
           genreId,
           genreName,
           status,
@@ -230,6 +240,8 @@ export const useRoomStore = create<RoomState>()(
         set({
           code: data.code,
           sourceMode: data.source_mode,
+          storefront: data.storefront,
+          storefrontName: data.storefront_name,
           genreId: data.genre_id,
           genreName: data.genre_name,
           status: data.status,

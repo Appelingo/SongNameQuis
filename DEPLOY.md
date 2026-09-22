@@ -150,7 +150,37 @@ Apple が返しているエラー内容をそのまま読んでください（�
 
 ---
 
-## 5. 更新・切り戻し
+## 5. スキーマ変更を伴う更新の順序（重要）
+
+**Vercel は Git 連携のため、`git push` した瞬間に本番へ反映されます。**
+マイグレーションを伴う変更では、順序を間違えると本番が壊れます。
+
+```
+誤: push → 公開される → まだ DB にカラムが無い → ルーム作成が失敗
+正: マイグレーション適用 → 適用を確認 → push
+```
+
+**必ずこの順で行うこと。**
+
+1. Supabase の SQL Editor でマイグレーションを適用
+2. 下のクエリで適用されたことを**確認**
+3. それから `git push`
+
+```sql
+-- 例: 追加したカラムが存在するか確認してから push する
+select column_name from information_schema.columns
+where table_name = 'rooms' order by column_name;
+```
+
+> 実際に 2026-09-22、`source_mode` のマイグレーション適用前に push してしまい、
+> 本番のルーム作成が一時的に失敗する状態になった。
+
+新しいカラムには**必ず `default` を付ける**こと。既存行が埋まらないと、
+適用した瞬間に既存データが不正になります。
+
+---
+
+## 6. 更新・切り戻し
 
 - **更新**: Git 連携なら push するだけ。CLI なら `npm run build:web && vercel deploy dist --prod`
 - **切り戻し**: Vercel の Deployments 一覧から以前のデプロイを選び **Promote to Production**

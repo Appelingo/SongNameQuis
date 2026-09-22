@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -16,7 +17,9 @@ import {
   fetchCatalogSongsByIds,
   fetchGenreChartSongs,
   fetchGenres,
+  fetchStorefronts,
   type Genre,
+  type Storefront,
 } from '../lib/appleCatalog';
 import { useRoomRealtime } from '../hooks/useRoomRealtime';
 import { supabase } from '../lib/supabase';
@@ -39,6 +42,8 @@ export function HostLobbyScreen(_props: Props) {
   const isPreset = sourceMode === 'preset';
   const [genres, setGenres] = useState<Genre[]>([]);
   const [genreId, setGenreId] = useState<string | null>(null);
+  const [storefronts, setStorefronts] = useState<Storefront[]>([]);
+  const [storefront, setStorefront] = useState('jp');
   // プリセットでもホストは Apple Music 認証が必須（判断 10 の追記）。
   // 「契約者が自分の権限で鳴らし、同席者が聴く」構図に揃えるため。
   const [musicConnected, setMusicConnected] = useState(false);
@@ -92,18 +97,40 @@ export function HostLobbyScreen(_props: Props) {
     ? participants.length > 0
     : participants.length > 0 && readyCount === participants.length;
 
+  // 国一覧の取得と、ホスト自身のストアフロントを初期値にする
   useEffect(() => {
-    if (!isPreset || genres.length > 0) return;
-    void fetchGenres()
+    if (!isPreset || storefronts.length > 0) return;
+    void fetchStorefronts()
+      .then(async (list) => {
+        setStorefronts(list);
+        try {
+          const music = await getMusicKitInstance();
+          if (music.storefrontId && list.some((s) => s.id === music.storefrontId)) {
+            setStorefront(music.storefrontId);
+          }
+        } catch {
+          // 未認証なら既定の jp のまま
+        }
+      })
+      .catch((e) => console.warn('[storefronts] 取得に失敗しました', e));
+  }, [isPreset, storefronts.length]);
+
+  // ジャンル ID はストアフロントごとに異なる（jp の 27 は us では 400 になる）。
+  // 国が変わったら必ず取り直し、選択もリセットする。
+  useEffect(() => {
+    if (!isPreset) return;
+    setGenres([]);
+    setGenreId(null);
+    void fetchGenres(storefront)
       .then((list) => {
         setGenres(list);
-        setGenreId((current) => current ?? list[0]?.id ?? null);
+        setGenreId(list[0]?.id ?? null);
       })
       .catch((e) => {
         console.warn('[genres] 取得に失敗しました', e);
         Alert.alert('エラー', 'ジャンル一覧を取得できませんでした');
       });
-  }, [isPreset, genres.length]);
+  }, [isPreset, storefront]);
 
   const handleStart = async () => {
     if (!roomId) {
@@ -140,7 +167,7 @@ export function HostLobbyScreen(_props: Props) {
         // プリセットはチャートの時点でプレビュー URL が揃っているので、
         // ライブラリ経路のような後追いのカタログ照会は要らない。
         genreName = genres.find((g) => g.id === genreId)?.name ?? null;
-        const songs = await fetchGenreChartSongs(genreId!);
+        const songs = await fetchGenreChartSongs(genreId!, storefront);
         quizTracks = buildPresetTracks(songs);
         if (quizTracks.length === 0) {
           throw new Error('このジャンルから出題できる曲が見つかりませんでした');
@@ -158,6 +185,10 @@ export function HostLobbyScreen(_props: Props) {
           status: 'playing',
           genre_id: isPreset ? genreId : null,
           genre_name: genreName,
+          storefront: isPreset ? storefront : 'jp',
+          storefront_name: isPreset
+            ? (storefronts.find((s) => s.id === storefront)?.name ?? null)
+            : null,
         })
         .eq('id', roomId);
 
@@ -247,6 +278,33 @@ export function HostLobbyScreen(_props: Props) {
               </Text>
             )}
           </Pressable>
+
+          <Text style={styles.section}>国・地域</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.countryRow}
+            contentContainerStyle={styles.countryRowContent}
+          >
+            {storefronts.length === 0 ? (
+              <Text style={styles.genreLoading}>読み込み中...</Text>
+            ) : (
+              storefronts.map((sf) => {
+                const on = sf.id === storefront;
+                return (
+                  <Pressable
+                    key={sf.id}
+                    style={[styles.genreChip, on && styles.genreChipOn]}
+                    onPress={() => setStorefront(sf.id)}
+                  >
+                    <Text style={[styles.genreText, on && styles.genreTextOn]}>
+                      {sf.name}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
 
           <Text style={styles.section}>出題するジャンル</Text>
           <View style={styles.genreWrap}>
@@ -384,6 +442,8 @@ const styles = StyleSheet.create({
   connectText: { color: '#e8c87a', fontSize: 14, fontWeight: '600' },
   connectTextOn: { color: '#7fd6a8' },
   connectHint: { color: '#8a7a55', fontSize: 11, marginTop: 4, lineHeight: 16 },
+  countryRow: { marginBottom: 16, maxHeight: 40 },
+  countryRowContent: { gap: 6, alignItems: 'center' },
   genreWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',

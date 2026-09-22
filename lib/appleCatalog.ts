@@ -193,3 +193,47 @@ export async function fetchGenreChartSongs(
   const songs = json.results?.songs?.[0]?.data ?? [];
   return songs.map(toCatalogSong).filter((s) => s.previewUrl !== null);
 }
+
+export type Storefront = {
+  id: string;
+  name: string;
+};
+
+/**
+ * 主要な音楽市場。167 件すべてを並べると選びにくいので、これらを先頭に出す。
+ * ここに無い国も一覧の後半から選べる。
+ */
+const PRIORITY_STOREFRONTS = [
+  'jp', 'us', 'gb', 'kr', 'tw', 'cn', 'fr', 'de', 'it', 'es',
+  'ca', 'au', 'br', 'mx', 'in', 'id', 'th', 'vn', 'ph', 'se',
+];
+
+/** ストアフロント（国・地域）一覧。主要市場を先頭、残りは名前順 */
+export async function fetchStorefronts(): Promise<Storefront[]> {
+  const token = getDeveloperToken();
+  if (!token) throw new Error('Apple Music の developer token が未設定です');
+
+  const res = await fetch('https://api.music.apple.com/v1/storefronts?limit=200', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`国一覧の取得に失敗しました (HTTP ${res.status})`);
+
+  const json = (await res.json()) as {
+    data?: { id: string; attributes?: { name?: string } }[];
+  };
+  const all = (json.data ?? []).map((s) => ({
+    id: s.id,
+    name: s.attributes?.name ?? s.id,
+  }));
+
+  const priority: Storefront[] = [];
+  for (const id of PRIORITY_STOREFRONTS) {
+    const found = all.find((s) => s.id === id);
+    if (found) priority.push(found);
+  }
+  const rest = all
+    .filter((s) => !PRIORITY_STOREFRONTS.includes(s.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return [...priority, ...rest];
+}

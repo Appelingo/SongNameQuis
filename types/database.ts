@@ -44,6 +44,8 @@ export type Database = {
           /** ルームを作った匿名ユーザーの auth.uid()。RLS の所有権判定に使う（判断 9） */
           host_user_id: string | null;
           source_mode: SourceMode;
+          storefront: string;
+          storefront_name: string | null;
           genre_id: string | null;
           genre_name: string | null;
           status: RoomStatus;
@@ -58,6 +60,8 @@ export type Database = {
           host_id: string;
           host_user_id?: string | null;
           source_mode?: SourceMode;
+          storefront?: string;
+          storefront_name?: string | null;
           genre_id?: string | null;
           genre_name?: string | null;
           status?: RoomStatus;
@@ -72,6 +76,8 @@ export type Database = {
           host_id?: string;
           host_user_id?: string | null;
           source_mode?: SourceMode;
+          storefront?: string;
+          storefront_name?: string | null;
           genre_id?: string | null;
           genre_name?: string | null;
           status?: RoomStatus;
